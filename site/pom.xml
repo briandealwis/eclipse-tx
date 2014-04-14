@@ -5,7 +5,7 @@
 
   <parent>
     <artifactId>trunk</artifactId>
-    <groupId>ca.mt.wbtools</groupId>
+    <groupId>ca.mt.tx</groupId>
     <version>0.0.1-SNAPSHOT</version>
   </parent>
 

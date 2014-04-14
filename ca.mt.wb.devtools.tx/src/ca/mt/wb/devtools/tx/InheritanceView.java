@@ -383,7 +383,6 @@ public class InheritanceView extends ViewPart implements IShowInTarget {
 							.getSubtypes(type));
 					monitor.worked(10);
 					getDisplay().asyncExec(new Runnable() {
-						@Override
 						public void run() {
 							addTypes(subtypes);
 						}
