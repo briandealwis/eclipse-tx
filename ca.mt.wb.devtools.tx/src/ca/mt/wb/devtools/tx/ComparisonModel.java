@@ -4,8 +4,9 @@
  */
 package ca.mt.wb.devtools.tx;
 
-import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.core.runtime.NullProgressMonitor;
@@ -14,74 +15,67 @@ import org.eclipse.jdt.core.ITypeHierarchy;
 import org.eclipse.jdt.core.JavaModelException;
 
 public class ComparisonModel {
-    protected IType types[] = new IType[0];
-    protected ITypeHierarchy hierarchies[] = new ITypeHierarchy[0];
+	protected Map<IType, ITypeHierarchy> added = new HashMap<IType, ITypeHierarchy>();
+	protected Set<IType> removed = new HashSet<IType>();
     
     public ComparisonModel() {}
     
     public void add(IType t) {
         if(contains(t)) { return; } // skip it
-        IType newTypes[] = new IType[types.length + 1];
-        ITypeHierarchy newHierarchies[] = new ITypeHierarchy[hierarchies.length + 1];
-        System.arraycopy(types, 0, newTypes, 0, types.length);
-        newTypes[types.length] = t;
-        System.arraycopy(hierarchies, 0, newHierarchies, 0, hierarchies.length);
+		removed.remove(t); // in case it was previously removed
         try {
-            newHierarchies[hierarchies.length] = t.newSupertypeHierarchy(new NullProgressMonitor());
+			added.put(t, t.newSupertypeHierarchy(new NullProgressMonitor()));
         } catch (JavaModelException e) {
              /* do nothing */
         }
-        types = newTypes;
-        hierarchies = newHierarchies;
     }
   
     public boolean remove(IType t) {
-        int index = indexOf(t);
-        if(index < 0) { return false; }
-        IType newTypes[] = new IType[types.length - 1];
-        ITypeHierarchy newHierarchies[] = new ITypeHierarchy[hierarchies.length - 1];
-        System.arraycopy(types, 0, newTypes, 0, index);
-        System.arraycopy(hierarchies, 0, newHierarchies, 0, index);
-        if(index + 1 < types.length) {
-            System.arraycopy(types, index + 1, newTypes, index, types.length - index -1);
-            System.arraycopy(hierarchies, index + 1, newHierarchies, index, types.length - index - 1);
-        }
-        types = newTypes;
-        hierarchies = newHierarchies;
-        return true;
+		boolean result = isShowing(t);
+		removed.add(t);
+		added.remove(t);
+		return result;
     }
     
     public boolean contains(IType t) {
-        return indexOf(t) >= 0;
+		return added.containsKey(t);
     }
-    
-    protected int indexOf(IType t) {
-        for(int i = 0; i < types.length; i++) {
-            if(t.equals(types[i])) { return i; }
-        }
-        return -1;
-    }
-    
-    public ITypeHierarchy hierarchyFor(IType t) {
-        int i = indexOf(t);
-        if(i < 0) { return null; }
-        return hierarchies[i];
-    }
-    
+
     public IType getSuperclassFor(IType t) {
-        for(int i = 0; i < hierarchies.length; i++) {
-            IType sup = hierarchies[i].getSuperclass(t);
-            if(sup != null) { return sup; }
+		for (ITypeHierarchy h : added.values()) {
+			IType sup = h.getSuperclass(t);
+			if (sup != null) {
+				// don't include if explicitly deleted
+				return isHidden(sup) ? null : sup;
+			}
         }
         return null;
     }
+
+	private boolean isShowing(IType t) {
+		if (added.containsKey(t)) {
+			return true;
+		}
+		for (ITypeHierarchy h : added.values()) {
+			if (h.getSupertypes(t) != null) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean isHidden(IType sup) {
+		return "java.lang.Object".equals(sup.getFullyQualifiedName())
+				|| removed.contains(sup);
+	}
     
     public IType[] getSuperinterfacesFor(IType t) {
         Set<IType> supers = new HashSet<IType>();
-        for(int i = 0; i < hierarchies.length; i++) {
-            IType si[] = hierarchies[i].getSuperInterfaces(t);
-            for(int j = 0; j < si.length; j++) {
-                supers.add(si[j]);
+		for (ITypeHierarchy h : added.values()) {
+			for (IType superinterface : h.getSuperInterfaces(t)) {
+				if (!isHidden(superinterface)) {
+					supers.add(superinterface);
+				}
             }
         }
         return (IType[])supers.toArray(new IType[supers.size()]);
@@ -89,22 +83,30 @@ public class ComparisonModel {
 
     public ComparisonModel copy() {
         ComparisonModel newInstance = new ComparisonModel();
-        newInstance.types = types;
-        newInstance.hierarchies = hierarchies;
+		newInstance.added = new HashMap<IType, ITypeHierarchy>(added);
+		newInstance.removed = new HashSet<IType>(removed);
         return newInstance;
     }
     
     public Set<IType> getTypes() {
-        Set<IType> l = new HashSet<IType>();
-        Collections.addAll(l, types);
-        return l;
+		return added.keySet();
     }
 
     public Set<IType> getAllTypes() {
-        Set<IType> l = new HashSet<IType>();
-        for(int i = 0; i < hierarchies.length; i++) {
-            Collections.addAll(l, hierarchies[i].getAllTypes());
+		Set<IType> results = new HashSet<IType>();
+		for (ITypeHierarchy h : added.values()) {
+			getAllTypes(results, h, h.getType());
         }
-        return l;
+		return results;
     }
+
+	private void getAllTypes(Set<IType> results, ITypeHierarchy h, IType type) {
+		if (isHidden(type) || results.contains(type)) {
+			return;
+		}
+		results.add(type);
+		for (IType sup : h.getSupertypes(type)) {
+			getAllTypes(results, h, sup);
+		}
+	}
 }

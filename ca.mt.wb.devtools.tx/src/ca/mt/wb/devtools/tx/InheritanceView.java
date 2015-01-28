@@ -7,6 +7,7 @@ package ca.mt.wb.devtools.tx;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 
 import org.eclipse.core.runtime.IProgressMonitor;
@@ -33,6 +34,7 @@ import org.eclipse.jface.dialogs.ProgressMonitorDialog;
 import org.eclipse.jface.util.LocalSelectionTransfer;
 import org.eclipse.jface.viewers.DoubleClickEvent;
 import org.eclipse.jface.viewers.IDoubleClickListener;
+import org.eclipse.jface.viewers.ISelection;
 import org.eclipse.jface.viewers.ISelectionChangedListener;
 import org.eclipse.jface.viewers.IStructuredSelection;
 import org.eclipse.jface.viewers.SelectionChangedEvent;
@@ -68,7 +70,7 @@ public class InheritanceView extends ViewPart implements IShowInTarget {
 	public static String viewID = "ca.mt.wb.devtools.tx.view";
 
 	private GraphViewer viewer;
-	private Action doubleClickAction;
+	private Action openInEditorAction;
 	private Action addNodeAction;
 	private Action deleteNodeAction;
 	private Action clearAction;
@@ -116,10 +118,10 @@ public class InheritanceView extends ViewPart implements IShowInTarget {
 
 		viewer.addSelectionChangedListener(new ISelectionChangedListener() {
 			public void selectionChanged(SelectionChangedEvent event) {
-				Object selected = getSelectedNode();
-				deleteNodeAction.setEnabled(selected instanceof IType
-						&& ((ComparisonModel) viewer.getInput())
-								.contains((IType) selected));
+				List<IType> selectedTypes = getSelectedTypes();
+				deleteNodeAction.setEnabled(!selectedTypes.isEmpty());
+				expandElementAction.setEnabled(!selectedTypes.isEmpty());
+				openInEditorAction.setEnabled(selectedTypes.size() == 1);
 			}
 		});
 	}
@@ -127,7 +129,7 @@ public class InheritanceView extends ViewPart implements IShowInTarget {
 	private void hookDoubleClickAction() {
 		viewer.addDoubleClickListener(new IDoubleClickListener() {
 			public void doubleClick(DoubleClickEvent event) {
-				doubleClickAction.run();
+				openInEditorAction.run();
 			}
 		});
 	}
@@ -155,8 +157,18 @@ public class InheritanceView extends ViewPart implements IShowInTarget {
 		getSite().registerContextMenu(menuMgr, viewer);
 	}
 
-	protected Object getSelectedNode() {
-		return ((IStructuredSelection) viewer.getSelection()).getFirstElement();
+	protected List<IType> getSelectedTypes() {
+		ISelection selection = viewer.getSelection();
+		if (selection.isEmpty() || !(selection instanceof IStructuredSelection)) {
+			return Collections.emptyList();
+		}
+		List<IType> selectedTypes = new ArrayList<IType>();
+		for (Object o : ((IStructuredSelection) selection).toArray()) {
+			if (o instanceof IType) {
+				selectedTypes.add((IType) o);
+			}
+		}
+		return selectedTypes;
 	}
 
 	public Viewer getViewer() {
@@ -196,7 +208,7 @@ public class InheritanceView extends ViewPart implements IShowInTarget {
 	}
 
 	private void fillContextMenu(IMenuManager manager) {
-		if (getSelectedNode() instanceof IType) {
+		if (!getSelectedTypes().isEmpty()) {
 			manager.add(expandElementAction);
 			manager.add(deleteNodeAction);
 		}
@@ -250,9 +262,8 @@ public class InheritanceView extends ViewPart implements IShowInTarget {
 
 		expandElementAction = new Action() {
 			public void run() {
-				Object selectedNode = getSelectedNode();
-				if (selectedNode != null && selectedNode instanceof IType) {
-					addSubTypes((IType) selectedNode);
+				for (IType t : getSelectedTypes()) {
+					addSubTypes(t);
 				}
 			}
 		};
@@ -265,14 +276,16 @@ public class InheritanceView extends ViewPart implements IShowInTarget {
 		deleteNodeAction = new Action() {
 			public void run() {
 				// ISelection = viewer.getSelection();
-				Object selectedNode = getSelectedNode();
-				if (selectedNode != null && selectedNode instanceof IType) {
-					ComparisonModel model = ((ComparisonModel) viewer
-							.getInput()).copy();
-					if (model.remove((IType) selectedNode)) {
-						viewer.setInput(model);
-						// viewer.refresh();
+				ComparisonModel model = ((ComparisonModel) viewer.getInput())
+						.copy();
+				boolean modified = false;
+				for (IType t : getSelectedTypes()) {
+					if (model.remove(t)) {
+						modified = true;
 					}
+				}
+				if (modified) {
+					viewer.setInput(model);
 				}
 				setEnabled(false);
 			}
@@ -298,9 +311,9 @@ public class InheritanceView extends ViewPart implements IShowInTarget {
 		clearAction.setDisabledImageDescriptor(getSharedImages()
 				.getImageDescriptor(ISharedImages.IMG_ETOOL_CLEAR_DISABLED));
 
-		doubleClickAction = new Action() {
+		openInEditorAction = new Action() {
 			public void run() {
-				openInEditor(getSelectedNode());
+				openInEditor(getSelectedTypes().get(0));
 			}
 		};
 
